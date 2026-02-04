@@ -1,0 +1,31 @@
+{
+  "grid": {
+    "size_m": 100.0,
+    "cell_m": 5.0,
+    "center_is_zero": true
+  },
+  "origin_at_center": {
+    "lat": "27.375443753594467",
+    "lon": "-82.45387321765854"
+  },
+  "items": [
+    {
+      "kind": "waypoint",
+      "id": 0,
+      "east_m": -29.0,
+      "north_m": -10.0
+    },
+    {
+      "kind": "waypoint",
+      "id": 1,
+      "east_m": -14.350000000000009,
+      "north_m": -10.662499999999994
+    },
+    {
+      "kind": "mission",
+      "id": 0,
+      "east_m": -28.031250000000007,
+      "north_m": -8.337499999999991
+    }
+  ]
+}
