@@ -11,8 +11,8 @@ from PyQt6.QtWidgets import (
 )
 
 # ===== Competition Constants (Nathan Benderson Park) =====
-ORIGIN_LAT = 27.375634
-ORIGIN_LON = -82.452487
+ORIGIN_LAT = 27.374831        
+ORIGIN_LON = -82.452441       
 GRID_SIZE_M = 100.0
 PX_PER_M = 8.0
 W_PX = H_PX = int(GRID_SIZE_M * PX_PER_M)
@@ -92,7 +92,7 @@ class Waypoint(QGraphicsEllipseItem, MapItem):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("RoboBoat 2026 | Surveyor v16.2")
+        self.setWindowTitle("RoboBoat 2026 | Surveyor v17.1")
         self.scene = QGraphicsScene(0, 0, W_PX, H_PX)
         self.view = QGraphicsView(self.scene)
         self.view.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -117,7 +117,7 @@ class MainWindow(QMainWindow):
         self.lbl_delta = QLabel("Move Delta: 0.00m")
         self.nudge_w = QLineEdit("0.0"); self.nudge_w.setFixedWidth(40)
         self.nudge_n = QLineEdit("0.0"); self.nudge_n.setFixedWidth(40)
-        btn_nudge = QPushButton("Nudge")
+        btn_nudge = QPushButton("Move")
         btn_nudge.clicked.connect(self.nudge_item)
         btn_del = QPushButton("❌ Delete"); btn_del.clicked.connect(self.delete_item)
         btn_save = QPushButton("💾 Save JSON"); btn_save.clicked.connect(self.save_mission)
@@ -202,26 +202,39 @@ class MainWindow(QMainWindow):
         if sel and isinstance(sel[0], MapItem):
             self.lbl_delta.setText(f"Move Delta: {sel[0].get_displacement_m():.2f}m")
 
-    def generate_json_dict(self):
-        wp_list = []
+    def format_json_output(self):
+        """Formats JSON so that each waypoint object {} is on its own single line."""
+        wp_list_strings = []
         for i, item in enumerate(self.items):
-            wp_list.append({
+            data = {
                 "id": i + 1,
                 "name": item.display_name,
                 "lat": round(item.lat, 7),
                 "lon": round(item.lon, 7),
                 "task": "UNKNOWN"
-            })
-        return {"frame_id": "map", "waypoints": wp_list}
+            }
+            # json.dumps without indent creates the single line for the object
+            wp_list_strings.append(f"    {json.dumps(data)}")
+        
+        # Construct the final string manually
+        output = "{\n"
+        output += '  "frame_id": "map",\n'
+        output += '  "waypoints": [\n'
+        output += ",\n".join(wp_list_strings)
+        output += "\n  ]\n}"
+        return output
 
     def copy_json_to_clipboard(self):
-        QApplication.clipboard().setText(json.dumps(self.generate_json_dict(), indent=2))
+        json_text = self.format_json_output()
+        QApplication.clipboard().setText(json_text)
         QMessageBox.information(self, "Copy", "JSON structure copied to clipboard.")
 
     def save_mission(self):
         path, _ = QFileDialog.getSaveFileName(self, "Save Mission", "mission.json", "JSON (*.json)")
         if path:
-            with open(path, "w") as f: json.dump(self.generate_json_dict(), f, indent=2)
+            json_text = self.format_json_output()
+            with open(path, "w") as f:
+                f.write(json_text)
 
 if __name__ == "__main__":
     app = QApplication([]); ex = MainWindow(); ex.resize(1350, 950); ex.show(); app.exec()
