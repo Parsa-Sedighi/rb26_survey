@@ -11,7 +11,7 @@ from PyQt6.QtWidgets import (
 )
 
 # ===== Competition Constants (Nathan Benderson Park) =====
-# Using the Origin provided in your last working script
+# Put the 
 ORIGIN_LAT = 27.374831        
 ORIGIN_LON = -82.452441       
 GRID_SIZE_M = 100.0
