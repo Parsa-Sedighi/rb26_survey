@@ -11,18 +11,20 @@ from PyQt6.QtWidgets import (
 )
 
 # ===== Competition Constants (Nathan Benderson Park) =====
-ORIGIN_LAT = 27.374831        
-ORIGIN_LON = -82.452441       
-GRID_SIZE_M = 100.0
-PX_PER_M = 8.0
+ORIGIN_LAT = 27.373421      
+ORIGIN_LON = -82.452435
+GRID_SIZE_M = 200.0  # 100m each side laterally
+PX_PER_M = 10.0      # 1 meter = 10 pixels for a 2000px workspace
 W_PX = H_PX = int(GRID_SIZE_M * PX_PER_M)
 R_EARTH = 6371000.0 
 
+# SHIFTED ORIGIN: 
+# X is centered (100m North / 100m South)
+# Y is at 90% (180m West/Forward visibility, 20m East/Land visibility)
 CENTER_X_PX = W_PX / 2
 CENTER_Y_PX = H_PX * 0.9 
 
 # ===== Math Engine =====
-
 def latlon_to_meters(lat, lon):
     m_lat, m_lon = 111320.0, 111320.0 * math.cos(math.radians(ORIGIN_LAT))
     return (lon - ORIGIN_LON) * m_lon, (lat - ORIGIN_LAT) * m_lat
@@ -40,16 +42,16 @@ def calculate_projection(user_lat, user_lon, west_brg, dist):
     return math.degrees(phi2), math.degrees(lam2)
 
 # ===== Graphics Items =====
-
 class MapItem:
     def setup_base(self, initial_name):
         self.display_name = initial_name
         self.label = QGraphicsTextItem(self.display_name, self)
         self.label.setFont(QFont("Arial", 9, QFont.Weight.Bold))
-        self.label.setPos(8, -10)
+        self.label.setPos(12, -12)
         self.start_pos = self.pos()
 
     def update_coords(self):
+        # nm maps to the vertical axis (West/East), em maps to horizontal (North/South)
         nm = (self.pos().x() - CENTER_X_PX)/PX_PER_M
         em = (self.pos().y() - CENTER_Y_PX)/PX_PER_M
         self.lat, self.lon = meters_to_latlon(em, nm)
@@ -61,7 +63,7 @@ class MapItem:
 
 class MissionElement(QGraphicsRectItem, MapItem):
     def __init__(self, x, y, name, on_move):
-        super().__init__(-6, -6, 12, 12)
+        super().__init__(-8, -8, 16, 16)
         self.setBrush(QBrush(Qt.GlobalColor.green))
         self.setPos(x, y); self.on_move = on_move
         self.setup_base(name); self.update_coords()
@@ -74,7 +76,7 @@ class MissionElement(QGraphicsRectItem, MapItem):
 
 class Waypoint(QGraphicsEllipseItem, MapItem):
     def __init__(self, x, y, name, on_move):
-        super().__init__(-5, -5, 10, 10)
+        super().__init__(-7, -7, 14, 14)
         self.setBrush(QBrush(Qt.GlobalColor.red))
         self.setPos(x, y); self.on_move = on_move
         self.setup_base(name); self.update_coords()
@@ -86,20 +88,20 @@ class Waypoint(QGraphicsEllipseItem, MapItem):
         return super().itemChange(change, value)
 
 # ===== Main App =====
-
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("RoboBoat 2026 | Surveyor v18.0")
+        self.setWindowTitle("RoboBoat 2026 | Surveyor (Shifted Origin for Water Survey)")
         self.scene = QGraphicsScene(0, 0, W_PX, H_PX)
         self.view = QGraphicsView(self.scene)
         self.view.setRenderHint(QPainter.RenderHint.Antialiasing)
+        self.view.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
         self.items = [] 
 
         central_widget = QWidget(); main_h_layout = QHBoxLayout(central_widget)
         left_layout = QVBoxLayout(); left_layout.addWidget(self.view)
 
-        # Controls Panel
+        # Controls
         c_lay = QHBoxLayout()
         self.type_combo = QComboBox(); self.type_combo.addItems(["Object (Green)", "Waypoint (Red)"])
         self.in_lat = QLineEdit(placeholderText="Obs Lat"); self.in_lon = QLineEdit(placeholderText="Obs Lon")
@@ -110,7 +112,7 @@ class MainWindow(QMainWindow):
         c_lay.addWidget(self.in_brg); c_lay.addWidget(self.in_dist); c_lay.addWidget(btn_proj)
         left_layout.addLayout(c_lay)
 
-        # Modification Panel
+        # Bottom Bar
         edit_lay = QHBoxLayout()
         self.lbl_delta = QLabel("Move Delta: 0.00m")
         self.nudge_w = QLineEdit("0.0"); self.nudge_w.setFixedWidth(40)
@@ -118,11 +120,8 @@ class MainWindow(QMainWindow):
         btn_nudge = QPushButton("Move")
         btn_nudge.clicked.connect(self.nudge_item)
         btn_del = QPushButton("❌ Delete"); btn_del.clicked.connect(self.delete_item)
-        
-        btn_load = QPushButton("📂 Load JSON")
-        btn_load.clicked.connect(self.load_mission)
-        btn_save = QPushButton("💾 Save JSON")
-        btn_save.clicked.connect(self.save_mission)
+        btn_load = QPushButton("📂 Load JSON"); btn_load.clicked.connect(self.load_mission)
+        btn_save = QPushButton("💾 Save JSON"); btn_save.clicked.connect(self.save_mission)
         
         edit_lay.addWidget(self.lbl_delta); edit_lay.addSpacing(10)
         edit_lay.addWidget(QLabel("W:")); edit_lay.addWidget(self.nudge_w)
@@ -131,21 +130,11 @@ class MainWindow(QMainWindow):
         edit_lay.addWidget(btn_del); edit_lay.addWidget(btn_load); edit_lay.addWidget(btn_save)
         left_layout.addLayout(edit_lay)
 
-        # Right Side Panel
+        # Table
         right_panel = QVBoxLayout()
-        right_panel.addWidget(QLabel("<b>WAYPOINT LIST</b>"))
-        
-        # New Double Copy Layout
-        copy_lay = QHBoxLayout()
-        btn_copy_objs = QPushButton("📋 Copy Objects")
-        btn_copy_objs.clicked.connect(lambda: self.copy_to_clipboard("objects"))
-        btn_copy_wps = QPushButton("📋 Copy Waypoints")
-        btn_copy_wps.clicked.connect(lambda: self.copy_to_clipboard("waypoints"))
-        
-        copy_lay.addWidget(btn_copy_objs)
-        copy_lay.addWidget(btn_copy_wps)
-        right_panel.addLayout(copy_lay)
-
+        h_lay = QHBoxLayout(); h_lay.addWidget(QLabel("<b>WAYPOINT LIST</b>"))
+        btn_copy = QPushButton("📋 Copy JSON"); btn_copy.clicked.connect(self.copy_json_to_clipboard)
+        h_lay.addWidget(btn_copy); right_panel.addLayout(h_lay)
         self.table = QTableWidget(0, 4); self.table.setHorizontalHeaderLabels(["ID", "Type", "Lat", "Lon"])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         right_panel.addWidget(self.table)
@@ -158,16 +147,34 @@ class MainWindow(QMainWindow):
     def draw_grid(self):
         self.scene.clear()
         self.scene.addRect(0, 0, W_PX, H_PX, QPen(Qt.GlobalColor.black, 2))
+        
         font = QFont("Arial", 12, QFont.Weight.Bold)
-        self.scene.addText("WEST (FRONT)", font).setPos(CENTER_X_PX-60, 10)
-        grid_p = QPen(Qt.GlobalColor.lightGray, 0.5)
-        for i in range(-20, 20):
-            x = CENTER_X_PX + (i * 5 * PX_PER_M)
-            y = CENTER_Y_PX + (i * 5 * PX_PER_M)
-            if 0 <= x <= W_PX: self.scene.addLine(x, 0, x, H_PX, grid_p)
-            if 0 <= y <= H_PX: self.scene.addLine(0, y, W_PX, y, grid_p)
-        self.scene.addLine(CENTER_X_PX, 0, CENTER_X_PX, H_PX, QPen(Qt.GlobalColor.blue, 1, Qt.PenStyle.DashLine))
-        self.scene.addLine(0, CENTER_Y_PX, W_PX, CENTER_Y_PX, QPen(Qt.GlobalColor.blue, 1, Qt.PenStyle.DashLine))
+        self.scene.addText("WEST (OPEN WATER)", font).setPos(CENTER_X_PX-80, 20)
+        self.scene.addText("EAST (LAND SIDE)", font).setPos(CENTER_X_PX-70, H_PX-40)
+        
+        grid_p = QPen(Qt.GlobalColor.lightGray, 0.5) 
+        major_p = QPen(Qt.GlobalColor.gray, 1.0)     
+        
+        # Draw dynamic grid based on shifted origin
+        # Calculate bounds for X and Y in meters relative to shifted center
+        start_x_m = int(-CENTER_X_PX / PX_PER_M)
+        end_x_m = int((W_PX - CENTER_X_PX) / PX_PER_M)
+        start_y_m = int(-CENTER_Y_PX / PX_PER_M)
+        end_y_m = int((H_PX - CENTER_Y_PX) / PX_PER_M)
+
+        for i in range(start_x_m, end_x_m + 1):
+            x = CENTER_X_PX + (i * PX_PER_M)
+            pen = major_p if i % 10 == 0 else grid_p
+            self.scene.addLine(x, 0, x, H_PX, pen)
+
+        for j in range(start_y_m, end_y_m + 1):
+            y = CENTER_Y_PX + (j * PX_PER_M)
+            pen = major_p if j % 10 == 0 else grid_p
+            self.scene.addLine(0, y, W_PX, y, pen)
+        
+        # Origin Blue Lines
+        self.scene.addLine(CENTER_X_PX, 0, CENTER_X_PX, H_PX, QPen(Qt.GlobalColor.blue, 1.5, Qt.PenStyle.DashLine))
+        self.scene.addLine(0, CENTER_Y_PX, W_PX, CENTER_Y_PX, QPen(Qt.GlobalColor.blue, 1.5, Qt.PenStyle.DashLine))
 
     def handle_double_click(self, event):
         pos = self.view.mapToScene(event.pos()); self.create_item(pos.x(), pos.y())
@@ -181,9 +188,7 @@ class MainWindow(QMainWindow):
 
     def create_item(self, x, y, name=None):
         prefix = "Obj" if self.type_combo.currentIndex() == 0 else "WP"
-        if name is None:
-            name = f"{prefix}_{len(self.items)+1}"
-        
+        if name is None: name = f"{prefix}_{len(self.items)+1}"
         item = MissionElement(x, y, name, self.refresh_table) if "Obj" in name else Waypoint(x, y, name, self.refresh_table)
         self.scene.addItem(item); self.items.append(item); self.refresh_table()
 
@@ -212,37 +217,16 @@ class MainWindow(QMainWindow):
         if sel and isinstance(sel[0], MapItem):
             self.lbl_delta.setText(f"Move Delta: {sel[0].get_displacement_m():.2f}m")
 
-    def format_json_output(self, filter_type=None):
-        """
-        filter_type: 'objects' to only export MissionElements, 
-                    'waypoints' to only export Waypoints,
-                    None to export all.
-        """
+    def format_json_output(self):
         wp_list_strings = []
-        counter = 1
-        for item in self.items:
-            # Filtering logic
-            is_obj = isinstance(item, MissionElement)
-            if filter_type == "objects" and not is_obj: continue
-            if filter_type == "waypoints" and is_obj: continue
-
-            data = {
-                "id": counter, 
-                "name": item.display_name, 
-                "lat": round(item.lat, 7), 
-                "lon": round(item.lon, 7), 
-                "task": "UNKNOWN"
-            }
+        for i, item in enumerate(self.items):
+            data = {"id": i + 1, "name": item.display_name, "lat": round(item.lat, 7), "lon": round(item.lon, 7), "task": "UNKNOWN"}
             wp_list_strings.append(f"    {json.dumps(data)}")
-            counter += 1
-            
-        output = "{\n" + '  "frame_id": "map",\n' + f'  "count": {len(wp_list_strings)},\n' + '  "waypoints": [\n' + ",\n".join(wp_list_strings) + "\n  ]\n}"
-        return output
+        return "{\n" + '  "frame_id": "map",\n' + '  "waypoints": [\n' + ",\n".join(wp_list_strings) + "\n  ]\n}"
 
-    def copy_to_clipboard(self, filter_type):
-        json_data = self.format_json_output(filter_type)
-        QApplication.clipboard().setText(json_data)
-        QMessageBox.information(self, "Copy", f"JSON for {filter_type} copied to clipboard.")
+    def copy_json_to_clipboard(self):
+        QApplication.clipboard().setText(self.format_json_output())
+        QMessageBox.information(self, "Copy", "JSON copied to clipboard.")
 
     def save_mission(self):
         path, _ = QFileDialog.getSaveFileName(self, "Save Mission", "mission.json", "JSON (*.json)")
@@ -254,8 +238,7 @@ class MainWindow(QMainWindow):
         if not path: return
         try:
             with open(path, "r") as f: data = json.load(f)
-            self.items.clear()
-            self.draw_grid() # Clears scene
+            self.items.clear(); self.draw_grid()
             for wp in data.get("waypoints", []):
                 em, nm = latlon_to_meters(wp["lat"], wp["lon"])
                 px, py = CENTER_X_PX + (nm * PX_PER_M), CENTER_Y_PX + (em * PX_PER_M)
